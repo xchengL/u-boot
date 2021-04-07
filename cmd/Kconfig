@@ -97,6 +97,13 @@ config CMD_ACPI
 	  between the firmware and OS, and is particularly useful when you
 	  want to make hardware changes without the OS needing to be adjusted.
 
+config CMD_ADDRMAP
+	bool "addrmap"
+	depends on ADDR_MAP
+	default y
+	help
+	  List non-identity virtual-physical memory mappings for 32-bit CPUs.
+
 config CMD_BDI
 	bool "bdinfo"
 	default y
@@ -1188,6 +1195,7 @@ config CMD_PCI
 
 config CMD_PINMUX
 	bool "pinmux - show pins muxing"
+	depends on PINCTRL
 	default y if PINCTRL
 	help
 	  Parse all available pin-controllers and show pins muxing. This
@@ -1301,6 +1309,7 @@ config CMD_UNIVERSE
 
 config CMD_USB
 	bool "usb"
+	depends on USB
 	select HAVE_BLOCK_DEVICE
 	help
 	  USB support.
@@ -1337,6 +1346,7 @@ config CMD_PVBLOCK
 config CMD_VIRTIO
 	bool "virtio"
 	depends on VIRTIO
+	depends on HAVE_BLOCK_DEVICE
 	default y if VIRTIO
 	help
 	  VirtIO block device support
@@ -2021,12 +2031,19 @@ config HASH_VERIFY
 	help
 	  Add -v option to verify data against a hash.
 
+config CMD_SCP03
+	bool "scp03 - SCP03 enable and rotate/provision operations"
+	depends on SCP03
+	help
+	  This command provides access to a Trusted Application
+	  running in a TEE to request Secure Channel Protocol 03
+	  (SCP03) enablement and/or rotation of its SCP03 keys.
+
 config CMD_TPM_V1
 	bool
 
 config CMD_TPM_V2
 	bool
-	select CMD_LOG
 
 config CMD_TPM
 	bool "Enable the 'tpm' command"
@@ -2234,6 +2251,15 @@ config CMD_BEDBUG
 	  The bedbug (emBEDded deBUGger) command provides debugging features
 	  for some PowerPC processors. For details please see the
 	  documentation in doc/README.bedbug.
+
+config CMD_CBSYSINFO
+	bool "cbsysinfo"
+	depends on X86
+	default y if SYS_COREBOOT
+	help
+	  This provides information about the coreboot sysinfo table stored in
+	  memory by coreboot before jumping to U-Boot. It can be useful for
+	  debugging the beaaviour of coreboot or U-Boot.
 
 config CMD_DIAG
 	bool "diag - Board diagnostics"

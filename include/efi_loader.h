@@ -214,6 +214,8 @@ extern const efi_guid_t efi_guid_rng_protocol;
 extern const efi_guid_t efi_guid_capsule_report;
 /* GUID of firmware management protocol */
 extern const efi_guid_t efi_guid_firmware_management_protocol;
+/* GUID for the ESRT */
+extern const efi_guid_t efi_esrt_guid;
 
 extern unsigned int __efi_runtime_start, __efi_runtime_stop;
 extern unsigned int __efi_runtime_rel_start, __efi_runtime_rel_stop;
@@ -242,7 +244,7 @@ struct efi_open_protocol_info_item {
  * @link:		link to the list of protocols of a handle
  * @guid:		GUID of the protocol
  * @protocol_interface:	protocol interface
- * @open_infos		link to the list of open protocol info items
+ * @open_infos:		link to the list of open protocol info items
  */
 struct efi_handler {
 	struct list_head link;
@@ -258,9 +260,13 @@ struct efi_handler {
  * started image.
  */
 enum efi_object_type {
+	/** @EFI_OBJECT_TYPE_UNDEFINED: undefined image type */
 	EFI_OBJECT_TYPE_UNDEFINED = 0,
+	/** @EFI_OBJECT_TYPE_U_BOOT_FIRMWARE: U-Boot firmware */
 	EFI_OBJECT_TYPE_U_BOOT_FIRMWARE,
+	/** @EFI_OBJECT_TYPE_LOADED_IMAGE: loaded image (not started) */
 	EFI_OBJECT_TYPE_LOADED_IMAGE,
+	/** @EFI_OBJECT_TYPE_STARTED_IMAGE: started image */
 	EFI_OBJECT_TYPE_STARTED_IMAGE,
 };
 
@@ -270,6 +276,7 @@ enum efi_object_type {
  * @link:	pointers to put the handle into a linked list
  * @protocols:	linked list with the protocol interfaces installed on this
  *		handle
+ * @type:	image type if the handle relates to an image
  *
  * UEFI offers a flexible and expandable object model. The objects in the UEFI
  * API are devices, drivers, and loaded images. struct efi_object is our storage
@@ -325,7 +332,7 @@ struct efi_loaded_image_obj {
  * @queue_link:		Link to the list of queued events
  * @type:		Type of event, see efi_create_event
  * @notify_tpl:		Task priority level of notifications
- * @nofify_function:	Function to call when the event is triggered
+ * @notify_function:	Function to call when the event is triggered
  * @notify_context:	Data to be passed to the notify function
  * @group:		Event group
  * @trigger_time:	Period of the timer
@@ -368,7 +375,8 @@ struct efi_protocol_notification {
 };
 
 /**
- * efi_register_notify_event - event registered by RegisterProtocolNotify()
+ * struct efi_register_notify_event - event registered by
+ *				      RegisterProtocolNotify()
  *
  * The address of this structure serves as registration value.
  *
@@ -431,6 +439,7 @@ efi_status_t efi_net_register(void);
 /* Called by bootefi to make the watchdog available */
 efi_status_t efi_watchdog_register(void);
 efi_status_t efi_initrd_register(void);
+void efi_initrd_deregister(void);
 /* Called by bootefi to make SMBIOS tables available */
 /**
  * efi_acpi_register() - write out ACPI tables
@@ -551,6 +560,15 @@ struct efi_simple_file_system_protocol *efi_simple_file_system(
 
 /* open file from device-path: */
 struct efi_file_handle *efi_file_from_path(struct efi_device_path *fp);
+
+/* Registers a callback function for a notification event. */
+efi_status_t EFIAPI efi_register_protocol_notify(const efi_guid_t *protocol,
+						 struct efi_event *event,
+						 void **registration);
+efi_status_t efi_file_size(struct efi_file_handle *fh, efi_uintn_t *size);
+
+/* get a device path from a Boot#### option */
+struct efi_device_path *efi_get_dp_from_boot(const efi_guid_t guid);
 
 /**
  * efi_size_in_pages() - convert size in bytes to size in pages
@@ -717,6 +735,8 @@ efi_status_t EFIAPI efi_query_variable_info(
 			u64 *remaining_variable_storage_size,
 			u64 *maximum_variable_size);
 
+void *efi_get_var(u16 *name, const efi_guid_t *vendor, efi_uintn_t *size);
+
 /*
  * See section 3.1.3 in the v2.7 UEFI spec for more details on
  * the layout of EFI_LOAD_OPTION.  In short it is:
@@ -738,6 +758,10 @@ struct efi_load_option {
 	const u8 *optional_data;
 };
 
+struct efi_device_path *efi_dp_from_lo(struct efi_load_option *lo,
+				       efi_uintn_t *size, efi_guid_t guid);
+struct efi_device_path *efi_dp_concat(const struct efi_device_path *dp1,
+				      const struct efi_device_path *dp2);
 efi_status_t efi_deserialize_load_option(struct efi_load_option *lo, u8 *data,
 					 efi_uintn_t *size);
 unsigned long efi_serialize_load_option(struct efi_load_option *lo, u8 **data);
@@ -747,7 +771,7 @@ efi_status_t efi_set_load_options(efi_handle_t handle,
 efi_status_t efi_bootmgr_load(efi_handle_t *handle, void **load_options);
 
 /**
- * efi_image_regions - A list of memory regions
+ * struct efi_image_regions - A list of memory regions
  *
  * @max:	Maximum number of regions
  * @num:	Number of regions
@@ -760,13 +784,13 @@ struct efi_image_regions {
 };
 
 /**
- * efi_sig_data - A decoded data of struct efi_signature_data
+ * struct efi_sig_data - A decoded data of struct efi_signature_data
  *
  * This structure represents an internal form of signature in
  * signature database. A listed list may represent a signature list.
  *
  * @next:	Pointer to next entry
- * @onwer:	Signature owner
+ * @owner:	Signature owner
  * @data:	Pointer to signature data
  * @size:	Size of signature data
  */
@@ -778,7 +802,7 @@ struct efi_sig_data {
 };
 
 /**
- * efi_signature_store - A decoded data of signature database
+ * struct efi_signature_store - A decoded data of signature database
  *
  * This structure represents an internal form of signature database.
  *
@@ -884,4 +908,22 @@ static inline efi_status_t efi_launch_capsules(void)
 
 #endif /* CONFIG_IS_ENABLED(EFI_LOADER) */
 
+/**
+ * Install the ESRT system table.
+ *
+ * @return	status code
+ */
+efi_status_t efi_esrt_register(void);
+
+/**
+ * efi_esrt_populate() - Populates the ESRT entries from the FMP instances
+ * present in the system.
+ * If an ESRT already exists, the old ESRT is replaced in the system table.
+ * The memory of the old ESRT is deallocated.
+ *
+ * Return:
+ * - EFI_SUCCESS if the ESRT is correctly created
+ * - error code otherwise.
+ */
+efi_status_t efi_esrt_populate(void);
 #endif /* _EFI_LOADER_H */

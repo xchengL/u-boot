@@ -42,20 +42,28 @@ static struct efi_file_handle *bootdev_root;
 static __maybe_unused unsigned int get_last_capsule(void)
 {
 	u16 value16[11]; /* "CapsuleXXXX": non-null-terminated */
-	char value[11], *p;
+	char value[5];
 	efi_uintn_t size;
 	unsigned long index = 0xffff;
 	efi_status_t ret;
+	int i;
 
 	size = sizeof(value16);
 	ret = efi_get_variable_int(L"CapsuleLast", &efi_guid_capsule_report,
 				   NULL, &size, value16, NULL);
-	if (ret != EFI_SUCCESS || u16_strncmp(value16, L"Capsule", 7))
+	if (ret != EFI_SUCCESS || size != 22 ||
+	    u16_strncmp(value16, L"Capsule", 7))
 		goto err;
+	for (i = 0; i < 4; ++i) {
+		u16 c = value16[i + 7];
 
-	p = value;
-	utf16_utf8_strcpy(&p, value16);
-	strict_strtoul(&value[7], 16, &index);
+		if (!c || c > 0x7f)
+			goto err;
+		value[i] = c;
+	}
+	value[4] = 0;
+	if (strict_strtoul(value, 16, &index))
+		index = 0xffff;
 err:
 	return index;
 }
@@ -441,7 +449,7 @@ efi_status_t EFIAPI efi_update_capsule(
 	unsigned int i;
 	efi_status_t ret;
 
-	EFI_ENTRY("%p, %lu, %llu\n", capsule_header_array, capsule_count,
+	EFI_ENTRY("%p, %zu, %llu\n", capsule_header_array, capsule_count,
 		  scatter_gather_list);
 
 	if (!capsule_count) {
@@ -474,6 +482,14 @@ efi_status_t EFIAPI efi_update_capsule(
 			goto out;
 	}
 out:
+
+	if (IS_ENABLED(CONFIG_EFI_ESRT)) {
+		/* Rebuild the ESRT to reflect any updated FW images. */
+		ret = efi_esrt_populate();
+		if (ret != EFI_SUCCESS)
+			log_warning("EFI Capsule: failed to update ESRT\n");
+	}
+
 	return EFI_EXIT(ret);
 }
 
@@ -501,7 +517,7 @@ efi_status_t EFIAPI efi_query_capsule_caps(
 	unsigned int i;
 	efi_status_t ret;
 
-	EFI_ENTRY("%p, %lu, %p, %p\n", capsule_header_array, capsule_count,
+	EFI_ENTRY("%p, %zu, %p, %p\n", capsule_header_array, capsule_count,
 		  maximum_capsule_size, reset_type);
 
 	if (!maximum_capsule_size) {
@@ -753,9 +769,7 @@ static efi_status_t efi_capsule_scan_dir(u16 ***files, unsigned int *num)
 		if (!tmp_size)
 			break;
 
-		if (!(dirent->attribute & EFI_FILE_DIRECTORY) &&
-		    u16_strcmp(dirent->file_name, L".") &&
-		    u16_strcmp(dirent->file_name, L".."))
+		if (!(dirent->attribute & EFI_FILE_DIRECTORY))
 			count++;
 	}
 

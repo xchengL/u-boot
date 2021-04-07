@@ -21,6 +21,7 @@
 #include <mmc.h>
 #include <part.h>
 #include <asm/cache.h>
+#include <asm/global_data.h>
 #include <dm/device_compat.h>
 #include <linux/bitops.h>
 #include <linux/delay.h>
@@ -40,6 +41,12 @@
 
 #if !CONFIG_IS_ENABLED(BLK)
 #include "mmc_private.h"
+#endif
+
+#ifndef ESDHCI_QUIRK_BROKEN_TIMEOUT_VALUE
+#ifdef CONFIG_FSL_USDHC
+#define ESDHCI_QUIRK_BROKEN_TIMEOUT_VALUE	1
+#endif
 #endif
 
 DECLARE_GLOBAL_DATA_PTR;
@@ -1523,8 +1530,7 @@ static int fsl_esdhc_probe(struct udevice *dev)
 	if (CONFIG_IS_ENABLED(DM_GPIO) && !priv->non_removable) {
 		struct udevice *gpiodev;
 
-		ret = device_get_by_driver_info_idx(dtplat->cd_gpios->idx,
-						    &gpiodev);
+		ret = device_get_by_ofplat_idx(dtplat->cd_gpios->idx, &gpiodev);
 		if (ret)
 			return ret;
 
@@ -1705,6 +1711,7 @@ static struct esdhc_soc_data usdhc_imx8qm_data = {
 };
 
 static const struct udevice_id fsl_esdhc_ids[] = {
+	{ .compatible = "fsl,imx51-esdhc", },
 	{ .compatible = "fsl,imx53-esdhc", },
 	{ .compatible = "fsl,imx6ul-usdhc", },
 	{ .compatible = "fsl,imx6sx-usdhc", },

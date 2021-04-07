@@ -361,8 +361,11 @@ extern "C" {
 #if (__STD_C || defined(HAVE_MEMCPY))
 
 #if __STD_C
+/* U-Boot defines memset() and memcpy in /include/linux/string.h
 void* memset(void*, int, size_t);
 void* memcpy(void*, const void*, size_t);
+*/
+#include <linux/string.h>
 #else
 #ifdef WIN32
 /* On Win32 platforms, 'memset()' and 'memcpy()' are already declared in */
@@ -877,6 +880,8 @@ extern Void_t*     sbrk();
 
 #else
 
+void malloc_simple_info(void);
+
 #if CONFIG_IS_ENABLED(SYS_MALLOC_SIMPLE)
 #define malloc malloc_simple
 #define realloc realloc_simple
@@ -884,7 +889,6 @@ extern Void_t*     sbrk();
 static inline void free(void *ptr) {}
 void *calloc(size_t nmemb, size_t size);
 void *realloc_simple(void *ptr, size_t size);
-void malloc_simple_info(void);
 #else
 
 # ifdef USE_DL_PREFIX

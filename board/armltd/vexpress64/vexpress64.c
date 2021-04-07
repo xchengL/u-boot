@@ -12,6 +12,7 @@
 #include <errno.h>
 #include <net.h>
 #include <netdev.h>
+#include <asm/global_data.h>
 #include <asm/io.h>
 #include <linux/compiler.h>
 #include <dm/platform_data/serial_pl01x.h>
@@ -142,7 +143,7 @@ void *board_fdt_blob_setup(void)
 #endif
 
 /* Actual reset is done via PSCI. */
-void reset_cpu(ulong addr)
+void reset_cpu(void)
 {
 }
 

@@ -11,6 +11,7 @@
 #include <common.h>
 #include <cpu_func.h>
 #include <log.h>
+#include <asm/global_data.h>
 #include <asm/io.h>
 #include <clk.h>
 #include <fdtdec.h>
@@ -43,6 +44,9 @@ static int device_bind_common(struct udevice *parent, const struct driver *drv,
 	int size, ret = 0;
 	bool auto_seq = true;
 	void *ptr;
+
+	if (CONFIG_IS_ENABLED(OF_PLATDATA_NO_BIND))
+		return -ENOSYS;
 
 	if (devp)
 		*devp = NULL;
@@ -91,15 +95,19 @@ static int device_bind_common(struct udevice *parent, const struct driver *drv,
 	if (auto_seq && !(uc->uc_drv->flags & DM_UC_FLAG_NO_AUTO_SEQ))
 		dev->seq_ = uclass_find_next_free_seq(uc);
 
+	/* Check if we need to allocate plat */
 	if (drv->plat_auto) {
 		bool alloc = !plat;
 
+		/*
+		 * For of-platdata, we try use the existing data, but if
+		 * plat_auto is larger, we must allocate a new space
+		 */
 		if (CONFIG_IS_ENABLED(OF_PLATDATA)) {
-			if (of_plat_size) {
+			if (of_plat_size)
 				dev_or_flags(dev, DM_FLAG_OF_PLATDATA);
-				if (of_plat_size < drv->plat_auto)
-					alloc = true;
-			}
+			if (of_plat_size < drv->plat_auto)
+				alloc = true;
 		}
 		if (alloc) {
 			dev_or_flags(dev, DM_FLAG_ALLOC_PDATA);
@@ -108,6 +116,11 @@ static int device_bind_common(struct udevice *parent, const struct driver *drv,
 				ret = -ENOMEM;
 				goto fail_alloc1;
 			}
+
+			/*
+			 * For of-platdata, copy the old plat into the new
+			 * space
+			 */
 			if (CONFIG_IS_ENABLED(OF_PLATDATA) && plat)
 				memcpy(ptr, plat, of_plat_size);
 			dev_set_plat(dev, ptr);
@@ -127,9 +140,8 @@ static int device_bind_common(struct udevice *parent, const struct driver *drv,
 
 	if (parent) {
 		size = parent->driver->per_child_plat_auto;
-		if (!size) {
+		if (!size)
 			size = parent->uclass->uc_drv->per_child_plat_auto;
-		}
 		if (size) {
 			dev_or_flags(dev, DM_FLAG_ALLOC_PARENT_PDATA);
 			ptr = calloc(1, size);
@@ -199,14 +211,18 @@ fail_uclass_bind:
 		}
 	}
 fail_alloc3:
-	if (dev_get_flags(dev) & DM_FLAG_ALLOC_UCLASS_PDATA) {
-		free(dev_get_uclass_plat(dev));
-		dev_set_uclass_plat(dev, NULL);
+	if (CONFIG_IS_ENABLED(DM_DEVICE_REMOVE)) {
+		if (dev_get_flags(dev) & DM_FLAG_ALLOC_UCLASS_PDATA) {
+			free(dev_get_uclass_plat(dev));
+			dev_set_uclass_plat(dev, NULL);
+		}
 	}
 fail_alloc2:
-	if (dev_get_flags(dev) & DM_FLAG_ALLOC_PDATA) {
-		free(dev_get_plat(dev));
-		dev_set_plat(dev, NULL);
+	if (CONFIG_IS_ENABLED(DM_DEVICE_REMOVE)) {
+		if (dev_get_flags(dev) & DM_FLAG_ALLOC_PDATA) {
+			free(dev_get_plat(dev));
+			dev_set_plat(dev, NULL);
+		}
 	}
 fail_alloc1:
 	devres_release_all(dev);
@@ -382,26 +398,31 @@ int device_of_to_plat(struct udevice *dev)
 	if (dev_get_flags(dev) & DM_FLAG_PLATDATA_VALID)
 		return 0;
 
-	/* Ensure all parents have ofdata */
-	if (dev->parent) {
-		ret = device_of_to_plat(dev->parent);
+	/*
+	 * This is not needed if binding is disabled, since data is allocated
+	 * at build time.
+	 */
+	if (!CONFIG_IS_ENABLED(OF_PLATDATA_NO_BIND)) {
+		/* Ensure all parents have ofdata */
+		if (dev->parent) {
+			ret = device_of_to_plat(dev->parent);
+			if (ret)
+				goto fail;
+
+			/*
+			 * The device might have already been probed during
+			 * the call to device_probe() on its parent device
+			 * (e.g. PCI bridge devices). Test the flags again
+			 * so that we don't mess up the device.
+			 */
+			if (dev_get_flags(dev) & DM_FLAG_PLATDATA_VALID)
+				return 0;
+		}
+
+		ret = device_alloc_priv(dev);
 		if (ret)
 			goto fail;
-
-		/*
-		 * The device might have already been probed during
-		 * the call to device_probe() on its parent device
-		 * (e.g. PCI bridge devices). Test the flags again
-		 * so that we don't mess up the device.
-		 */
-		if (dev_get_flags(dev) & DM_FLAG_PLATDATA_VALID)
-			return 0;
 	}
-
-	ret = device_alloc_priv(dev);
-	if (ret)
-		goto fail;
-
 	drv = dev->driver;
 	assert(drv);
 
@@ -419,6 +440,43 @@ fail:
 	device_free(dev);
 
 	return ret;
+}
+
+/**
+ * device_get_dma_constraints() - Populate device's DMA constraints
+ *
+ * Gets a device's DMA constraints from firmware. This information is later
+ * used by drivers to translate physcal addresses to the device's bus address
+ * space. For now only device-tree is supported.
+ *
+ * @dev: Pointer to target device
+ * Return: 0 if OK or if no DMA constraints were found, error otherwise
+ */
+static int device_get_dma_constraints(struct udevice *dev)
+{
+	struct udevice *parent = dev->parent;
+	phys_addr_t cpu = 0;
+	dma_addr_t bus = 0;
+	u64 size = 0;
+	int ret;
+
+	if (!CONFIG_IS_ENABLED(DM_DMA) || !parent || !dev_has_ofnode(parent))
+		return 0;
+
+	/*
+	 * We start parsing for dma-ranges from the device's bus node. This is
+	 * specially important on nested buses.
+	 */
+	ret = dev_get_dma_range(parent, &cpu, &bus, &size);
+	/* Don't return an error if no 'dma-ranges' were found */
+	if (ret && ret != -ENOENT) {
+		dm_warn("%s: failed to get DMA range, %d\n", dev->name, ret);
+		return ret;
+	}
+
+	dev_set_dma_offset(dev, cpu - bus);
+
+	return 0;
 }
 
 int device_probe(struct udevice *dev)
@@ -483,6 +541,10 @@ int device_probe(struct udevice *dev)
 			goto fail;
 	}
 
+	ret = device_get_dma_constraints(dev);
+	if (ret)
+		goto fail;
+
 	ret = uclass_pre_probe_device(dev);
 	if (ret)
 		goto fail;
@@ -538,7 +600,7 @@ void *dev_get_plat(const struct udevice *dev)
 		return NULL;
 	}
 
-	return dev->plat_;
+	return dm_priv_to_rw(dev->plat_);
 }
 
 void *dev_get_parent_plat(const struct udevice *dev)
@@ -548,7 +610,7 @@ void *dev_get_parent_plat(const struct udevice *dev)
 		return NULL;
 	}
 
-	return dev->parent_plat_;
+	return dm_priv_to_rw(dev->parent_plat_);
 }
 
 void *dev_get_uclass_plat(const struct udevice *dev)
@@ -558,7 +620,7 @@ void *dev_get_uclass_plat(const struct udevice *dev)
 		return NULL;
 	}
 
-	return dev->uclass_plat_;
+	return dm_priv_to_rw(dev->uclass_plat_);
 }
 
 void *dev_get_priv(const struct udevice *dev)
@@ -568,7 +630,7 @@ void *dev_get_priv(const struct udevice *dev)
 		return NULL;
 	}
 
-	return dev->priv_;
+	return dm_priv_to_rw(dev->priv_);
 }
 
 void *dev_get_uclass_priv(const struct udevice *dev)
@@ -578,7 +640,7 @@ void *dev_get_uclass_priv(const struct udevice *dev)
 		return NULL;
 	}
 
-	return dev->uclass_priv_;
+	return dm_priv_to_rw(dev->uclass_priv_);
 }
 
 void *dev_get_parent_priv(const struct udevice *dev)
@@ -588,7 +650,7 @@ void *dev_get_parent_priv(const struct udevice *dev)
 		return NULL;
 	}
 
-	return dev->parent_priv_;
+	return dm_priv_to_rw(dev->parent_priv_);
 }
 
 static int device_get_device_tail(struct udevice *dev, int ret,
@@ -749,27 +811,19 @@ int device_get_global_by_ofnode(ofnode ofnode, struct udevice **devp)
 }
 
 #if CONFIG_IS_ENABLED(OF_PLATDATA)
-int device_get_by_driver_info(const struct driver_info *info,
-			      struct udevice **devp)
+int device_get_by_ofplat_idx(uint idx, struct udevice **devp)
 {
-	struct driver_info *info_base =
-		ll_entry_start(struct driver_info, driver_info);
-	int idx = info - info_base;
-	struct driver_rt *drt = gd_dm_driver_rt() + idx;
 	struct udevice *dev;
 
-	dev = drt->dev;
-	*devp = NULL;
+	if (CONFIG_IS_ENABLED(OF_PLATDATA_INST)) {
+		struct udevice *base = ll_entry_start(struct udevice, udevice);
 
-	return device_get_device_tail(dev, dev ? 0 : -ENOENT, devp);
-}
+		dev = base + idx;
+	} else {
+		struct driver_rt *drt = gd_dm_driver_rt() + idx;
 
-int device_get_by_driver_info_idx(uint idx, struct udevice **devp)
-{
-	struct driver_rt *drt = gd_dm_driver_rt() + idx;
-	struct udevice *dev;
-
-	dev = drt->dev;
+		dev = drt->dev;
+	}
 	*devp = NULL;
 
 	return device_get_device_tail(dev, dev ? 0 : -ENOENT, devp);
@@ -1082,3 +1136,36 @@ int dev_enable_by_path(const char *path)
 	return lists_bind_fdt(parent, node, NULL, false);
 }
 #endif
+
+#if CONFIG_IS_ENABLED(OF_PLATDATA_RT)
+static struct udevice_rt *dev_get_rt(const struct udevice *dev)
+{
+	struct udevice *base = ll_entry_start(struct udevice, udevice);
+	int idx = dev - base;
+
+	struct udevice_rt *urt = gd_dm_udevice_rt() + idx;
+
+	return urt;
+}
+
+u32 dev_get_flags(const struct udevice *dev)
+{
+	const struct udevice_rt *urt = dev_get_rt(dev);
+
+	return urt->flags_;
+}
+
+void dev_or_flags(const struct udevice *dev, u32 or)
+{
+	struct udevice_rt *urt = dev_get_rt(dev);
+
+	urt->flags_ |= or;
+}
+
+void dev_bic_flags(const struct udevice *dev, u32 bic)
+{
+	struct udevice_rt *urt = dev_get_rt(dev);
+
+	urt->flags_ &= ~bic;
+}
+#endif /* OF_PLATDATA_RT */

@@ -129,6 +129,8 @@
 #define ZYNQ_GEM_FREQUENCY_100	25000000UL
 #define ZYNQ_GEM_FREQUENCY_1000	125000000UL
 
+#define RXCLK_EN		BIT(0)
+
 /* Device registers */
 struct zynq_gem_regs {
 	u32 nwctrl; /* 0x0 - Network Control reg */
@@ -205,10 +207,12 @@ struct zynq_gem_priv {
 	struct phy_device *phydev;
 	ofnode phy_of_node;
 	struct mii_dev *bus;
-	struct clk clk;
+	struct clk rx_clk;
+	struct clk tx_clk;
 	u32 max_speed;
 	bool int_pcs;
 	bool dma_64bit;
+	u32 clk_en_info;
 };
 
 static int phy_setup_op(struct zynq_gem_priv *priv, u32 phy_addr, u32 regnum,
@@ -450,14 +454,6 @@ static int zynq_gem_init(struct udevice *dev)
 	    priv->int_pcs) {
 		nwconfig |= ZYNQ_GEM_NWCFG_SGMII_ENBL |
 			    ZYNQ_GEM_NWCFG_PCS_SEL;
-#ifdef CONFIG_ARM64
-	if (priv->phydev->phy_id != PHY_FIXED_ID)
-		writel(readl(&regs->pcscntrl) | ZYNQ_GEM_PCS_CTL_ANEG_ENBL,
-		       &regs->pcscntrl);
-	else
-		writel(readl(&regs->pcscntrl) & ~ZYNQ_GEM_PCS_CTL_ANEG_ENBL,
-		       &regs->pcscntrl);
-#endif
 	}
 
 	switch (priv->phydev->speed) {
@@ -476,18 +472,42 @@ static int zynq_gem_init(struct udevice *dev)
 		break;
 	}
 
-	ret = clk_set_rate(&priv->clk, clk_rate);
-	if (IS_ERR_VALUE(ret) && ret != (unsigned long)-ENOSYS) {
+#ifdef CONFIG_ARM64
+	if (priv->interface == PHY_INTERFACE_MODE_SGMII &&
+	    priv->int_pcs) {
+		/*
+		 * Disable AN for fixed link configuration, enable otherwise.
+		 * Must be written after PCS_SEL is set in nwconfig,
+		 * otherwise writes will not take effect.
+		 */
+		if (priv->phydev->phy_id != PHY_FIXED_ID)
+			writel(readl(&regs->pcscntrl) | ZYNQ_GEM_PCS_CTL_ANEG_ENBL,
+			       &regs->pcscntrl);
+		else
+			writel(readl(&regs->pcscntrl) & ~ZYNQ_GEM_PCS_CTL_ANEG_ENBL,
+			       &regs->pcscntrl);
+	}
+#endif
+
+	ret = clk_set_rate(&priv->tx_clk, clk_rate);
+	if (IS_ERR_VALUE(ret)) {
 		dev_err(dev, "failed to set tx clock rate\n");
 		return ret;
 	}
 
-	ret = clk_enable(&priv->clk);
-	if (ret && ret != -ENOSYS) {
+	ret = clk_enable(&priv->tx_clk);
+	if (ret) {
 		dev_err(dev, "failed to enable tx clock\n");
 		return ret;
 	}
 
+	if (priv->clk_en_info & RXCLK_EN) {
+		ret = clk_enable(&priv->rx_clk);
+		if (ret) {
+			dev_err(dev, "failed to enable rx clock\n");
+			return ret;
+		}
+	}
 	setbits_le32(&regs->nwctrl, ZYNQ_GEM_NWCTRL_RXEN_MASK |
 					ZYNQ_GEM_NWCTRL_TXEN_MASK);
 
@@ -694,10 +714,18 @@ static int zynq_gem_probe(struct udevice *dev)
 	priv->tx_bd = (struct emac_bd *)bd_space;
 	priv->rx_bd = (struct emac_bd *)((ulong)bd_space + BD_SEPRN_SPACE);
 
-	ret = clk_get_by_name(dev, "tx_clk", &priv->clk);
+	ret = clk_get_by_name(dev, "tx_clk", &priv->tx_clk);
 	if (ret < 0) {
-		dev_err(dev, "failed to get clock\n");
-		goto err1;
+		dev_err(dev, "failed to get tx_clock\n");
+		goto err2;
+	}
+
+	if (priv->clk_en_info & RXCLK_EN) {
+		ret = clk_get_by_name(dev, "rx_clk", &priv->rx_clk);
+		if (ret < 0) {
+			dev_err(dev, "failed to get rx_clock\n");
+			goto err2;
+		}
 	}
 
 	priv->bus = mdio_alloc();
@@ -711,14 +739,16 @@ static int zynq_gem_probe(struct udevice *dev)
 
 	ret = zynq_phy_init(dev);
 	if (ret)
-		goto err2;
+		goto err3;
 
 	return ret;
 
+err3:
+	mdio_unregister(priv->bus);
 err2:
-	free(priv->rxbuffers);
-err1:
 	free(priv->tx_bd);
+err1:
+	free(priv->rxbuffers);
 	return ret;
 }
 
@@ -792,11 +822,13 @@ static int zynq_gem_of_to_plat(struct udevice *dev)
 	       (ulong)priv->iobase, (ulong)priv->mdiobase, priv->phyaddr,
 	       phy_string_for_interface(priv->interface));
 
+	priv->clk_en_info = dev_get_driver_data(dev);
+
 	return 0;
 }
 
 static const struct udevice_id zynq_gem_ids[] = {
-	{ .compatible = "cdns,versal-gem" },
+	{ .compatible = "cdns,versal-gem", .data = RXCLK_EN },
 	{ .compatible = "cdns,zynqmp-gem" },
 	{ .compatible = "cdns,zynq-gem" },
 	{ .compatible = "cdns,gem" },

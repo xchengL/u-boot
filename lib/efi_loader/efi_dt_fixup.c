@@ -8,6 +8,7 @@
 #include <common.h>
 #include <efi_dt_fixup.h>
 #include <efi_loader.h>
+#include <fdtdec.h>
 #include <mapmem.h>
 
 const efi_guid_t efi_guid_dt_fixup_protocol = EFI_DT_FIXUP_PROTOCOL_GUID;
@@ -60,7 +61,7 @@ void efi_carve_out_dt_rsv(void *fdt)
 	for (i = 0; i < nr_rsv; i++) {
 		if (fdt_get_mem_rsv(fdt, i, &addr, &size) != 0)
 			continue;
-		efi_reserve_memory(addr, size, false);
+		efi_reserve_memory(addr, size, true);
 	}
 
 	/* process reserved-memory */

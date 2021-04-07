@@ -93,6 +93,8 @@ struct udevice;
  *			   datasheet explains it's usage of this addressing
  *			   mode.
  * @emul: Emulator for this chip address (only used for emulation)
+ * @emul_idx: Emulator index, used for of-platdata and set by each i2c chip's
+ *	bind() method. This allows i2c_emul_find() to work with of-platdata.
  */
 struct dm_i2c_chip {
 	uint chip_addr;
@@ -102,6 +104,7 @@ struct dm_i2c_chip {
 #ifdef CONFIG_SANDBOX
 	struct udevice *emul;
 	bool test_mode;
+	int emul_idx;
 #endif
 };
 
@@ -555,6 +558,18 @@ void i2c_dump_msgs(struct i2c_msg *msg, int nmsgs);
 int i2c_emul_find(struct udevice *dev, struct udevice **emulp);
 
 /**
+ * i2c_emul_set_idx() - Set the emulator index for an i2c sandbox device
+ *
+ * With of-platdata we cannot find the emulator using the device tree, so rely
+ * on the bind() method of each i2c driver calling this function to tell us
+ * the of-platdata idx of the emulator
+ *
+ * @dev: i2c device to set the emulator for
+ * @emul_idx: of-platdata index for that emulator
+ */
+void i2c_emul_set_idx(struct udevice *dev, int emul_idx);
+
+/**
  * i2c_emul_get_device() - Find the device being emulated
  *
  * Given an emulator this returns the associated device
@@ -581,7 +596,7 @@ extern struct acpi_ops i2c_acpi_ops;
  */
 int acpi_i2c_of_to_plat(struct udevice *dev);
 
-#ifndef CONFIG_DM_I2C
+#if !CONFIG_IS_ENABLED(DM_I2C)
 
 /*
  * WARNING WARNING WARNING WARNING WARNING WARNING WARNING WARNING

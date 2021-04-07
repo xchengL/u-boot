@@ -23,6 +23,7 @@
 #include <errno.h>
 #include <net.h>
 #include <netdev.h>
+#include <asm/global_data.h>
 #include <asm/io.h>
 #include <asm/mach-types.h>
 #include <asm/arch/systimer.h>
@@ -173,7 +174,7 @@ int v2m_cfg_write(u32 devfn, u32 data)
 }
 
 /* Use the ARM Watchdog System to cause reset */
-void reset_cpu(ulong addr)
+void reset_cpu(void)
 {
 	if (v2m_cfg_write(SYS_CFG_REBOOT | SYS_CFG_SITE_MB, 0))
 		printf("Unable to reboot\n");

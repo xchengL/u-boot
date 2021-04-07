@@ -222,6 +222,15 @@ struct spl_load_info {
 	void *priv;
 	int bl_len;
 	const char *filename;
+	/**
+	 * read() - Read from device
+	 *
+	 * @load: Information about the load state
+	 * @sector: Sector number to read from (each @load->bl_len bytes)
+	 * @count: Number of sectors to read
+	 * @buf: Buffer to read into
+	 * @return number of sectors read, 0 on error
+	 */
 	ulong (*read)(struct spl_load_info *load, ulong sector, ulong count,
 		      void *buf);
 };
@@ -701,9 +710,9 @@ int board_return_to_bootrom(struct spl_image_info *spl_image,
 
 /**
  * board_spl_fit_post_load - allow process images after loading finished
- *
+ * @fit: Pointer to a valid Flattened Image Tree blob
  */
-void board_spl_fit_post_load(ulong load_addr, size_t length);
+void board_spl_fit_post_load(const void *fit);
 
 /**
  * board_spl_fit_size_align - specific size align before processing payload

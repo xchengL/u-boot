@@ -8,6 +8,7 @@
 #include <dm.h>
 #include <dm/platform_data/serial_pl01x.h>
 #include <asm/armv8/mmu.h>
+#include <asm/global_data.h>
 
 static const struct pl01x_serial_plat serial_plat = {
 	.base = UART0_BASE,
@@ -62,6 +63,6 @@ int dram_init_banksize(void)
 }
 
 /* Nothing to be done here as handled by PSCI interface */
-void reset_cpu(ulong addr)
+void reset_cpu(void)
 {
 }

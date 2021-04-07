@@ -7,6 +7,7 @@
 #include <clk.h>
 #include <cpu.h>
 #include <dm.h>
+#include <asm/global_data.h>
 #include <dm/lists.h>
 #include <dm/device_compat.h>
 #include <dm/device-internal.h>
@@ -82,11 +83,7 @@ static int timer_post_probe(struct udevice *dev)
 	return 0;
 }
 
-/*
- * TODO: should be CONFIG_IS_ENABLED(CPU), but the SPL config has _SUPPORT on
- * the end...
- */
-#if defined(CONFIG_CPU) || defined(CONFIG_SPL_CPU_SUPPORT)
+#if CONFIG_IS_ENABLED(CPU)
 int timer_timebase_fallback(struct udevice *dev)
 {
 	struct udevice *cpu;

@@ -12,6 +12,7 @@
 #include <image.h>
 #include <init.h>
 #include <net.h>
+#include <asm/global_data.h>
 #include <linux/bitops.h>
 #include <linux/delay.h>
 
@@ -1138,7 +1139,7 @@ int board_fit_config_name_match(const char *name)
 }
 #endif
 
-void reset_cpu(ulong addr)
+void reset_cpu(void)
 {
 }
 

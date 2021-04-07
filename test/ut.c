@@ -11,6 +11,7 @@
 #ifdef CONFIG_SANDBOX
 #include <asm/state.h>
 #endif
+#include <asm/global_data.h>
 #include <test/test.h>
 #include <test/ut.h>
 
@@ -131,4 +132,11 @@ void ut_silence_console(struct unit_test_state *uts)
 void ut_unsilence_console(struct unit_test_state *uts)
 {
 	gd->flags &= ~(GD_FLG_SILENT | GD_FLG_RECORD);
+}
+
+void ut_set_skip_delays(struct unit_test_state *uts, bool skip_delays)
+{
+#ifdef CONFIG_SANDBOX
+	state_set_skip_delays(skip_delays);
+#endif
 }

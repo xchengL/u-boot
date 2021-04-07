@@ -11,6 +11,7 @@
 #include <os.h>
 #include <malloc.h>
 #include <sandboxblockdev.h>
+#include <asm/global_data.h>
 #include <dm/device_compat.h>
 #include <linux/errno.h>
 #include <dm/device-internal.h>
@@ -88,7 +89,7 @@ static unsigned long host_block_write(struct blk_desc *block_dev,
 }
 
 #ifdef CONFIG_BLK
-int host_dev_bind(int devnum, char *filename)
+int host_dev_bind(int devnum, char *filename, bool removable)
 {
 	struct host_block_dev *host_dev;
 	struct udevice *dev;
@@ -145,7 +146,7 @@ int host_dev_bind(int devnum, char *filename)
 	}
 
 	desc = blk_get_devnum_by_type(IF_TYPE_HOST, devnum);
-	desc->removable = 1;
+	desc->removable = removable;
 	snprintf(desc->vendor, BLK_VEN_SIZE, "U-Boot");
 	snprintf(desc->product, BLK_PRD_SIZE, "hostfile");
 	snprintf(desc->revision, BLK_REV_SIZE, "1.0");
@@ -159,7 +160,7 @@ err:
 	return ret;
 }
 #else
-int host_dev_bind(int dev, char *filename)
+int host_dev_bind(int dev, char *filename, bool removable)
 {
 	struct host_block_dev *host_dev = find_host_device(dev);
 
@@ -194,7 +195,7 @@ int host_dev_bind(int dev, char *filename)
 	blk_dev->block_write = host_block_write;
 	blk_dev->devnum = dev;
 	blk_dev->part_type = PART_TYPE_UNKNOWN;
-	blk_dev->removable = 1;
+	blk_dev->removable = removable;
 	snprintf(blk_dev->vendor, BLK_VEN_SIZE, "U-Boot");
 	snprintf(blk_dev->product, BLK_PRD_SIZE, "hostfile");
 	snprintf(blk_dev->revision, BLK_REV_SIZE, "1.0");
@@ -230,6 +231,18 @@ int host_get_dev_err(int devnum, struct blk_desc **blk_devp)
 }
 
 #ifdef CONFIG_BLK
+
+int sandbox_host_unbind(struct udevice *dev)
+{
+	struct host_block_dev *host_dev;
+
+	/* Data validity is checked in host_dev_bind() */
+	host_dev = dev_get_plat(dev);
+	os_close(host_dev->fd);
+
+	return 0;
+}
+
 static const struct blk_ops sandbox_host_blk_ops = {
 	.read	= host_block_read,
 	.write	= host_block_write,
@@ -239,6 +252,7 @@ U_BOOT_DRIVER(sandbox_host_blk) = {
 	.name		= "sandbox_host_blk",
 	.id		= UCLASS_BLK,
 	.ops		= &sandbox_host_blk_ops,
+	.unbind		= sandbox_host_unbind,
 	.plat_auto	= sizeof(struct host_block_dev),
 };
 #else

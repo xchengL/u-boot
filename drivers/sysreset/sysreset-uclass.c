@@ -21,6 +21,7 @@
 #include <dm/root.h>
 #include <linux/delay.h>
 #include <linux/err.h>
+#include <asm/global_data.h>
 
 int sysreset_request(struct udevice *dev, enum sysreset_t type)
 {
@@ -112,12 +113,13 @@ void sysreset_walk_halt(enum sysreset_t type)
 /**
  * reset_cpu() - calls sysreset_walk(SYSRESET_WARM)
  */
-void reset_cpu(ulong addr)
+void reset_cpu(void)
 {
 	sysreset_walk_halt(SYSRESET_WARM);
 }
 
 
+#if IS_ENABLED(CONFIG_SYSRESET_CMD_RESET)
 int do_reset(struct cmd_tbl *cmdtp, int flag, int argc, char *const argv[])
 {
 	printf("resetting ...\n");
@@ -127,6 +129,7 @@ int do_reset(struct cmd_tbl *cmdtp, int flag, int argc, char *const argv[])
 
 	return 0;
 }
+#endif
 
 #if IS_ENABLED(CONFIG_SYSRESET_CMD_POWEROFF)
 int do_poweroff(struct cmd_tbl *cmdtp, int flag, int argc, char *const argv[])

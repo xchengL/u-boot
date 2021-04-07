@@ -12,6 +12,7 @@
 #include <net.h>
 #include <netdev.h>
 #include <scsi.h>
+#include <asm/global_data.h>
 
 #include <linux/sizes.h>
 #include <asm/io.h>
@@ -127,7 +128,7 @@ static int is_highbank(void)
 	return (midr & 0xfff0) == 0xc090;
 }
 
-void reset_cpu(ulong addr)
+void reset_cpu(void)
 {
 	writel(HB_PWR_HARD_RESET, HB_SREG_A9_PWR_REQ);
 	if (is_highbank())

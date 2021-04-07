@@ -13,7 +13,8 @@ results. Advantages of this approach are:
   U-Boot; there can be no disconnect.
 - There is no need to write or embed test-related code into U-Boot itself.
   It is asserted that writing test-related code in Python is simpler and more
-  flexible than writing it all in C.
+  flexible than writing it all in C. But see :doc:`tests_writing` for caveats
+  and more discussion / analysis.
 - It is reasonably simple to interact with U-Boot in this way.
 
 Requirements
@@ -301,7 +302,7 @@ saving wear on the flash chip(s).
 Examples
 ''''''''
 
-https://github.com/swarren/uboot-test-hooks contains some working example hook
+https://source.denx.de/u-boot/u-boot-test-hooks contains some working example hook
 scripts, and may be useful as a reference when implementing hook scripts for
 your platform. These scripts are not considered part of U-Boot itself.
 

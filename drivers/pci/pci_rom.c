@@ -38,6 +38,7 @@
 #include <video.h>
 #include <video_fb.h>
 #include <acpi/acpi_s3.h>
+#include <asm/global_data.h>
 #include <linux/screen_info.h>
 
 DECLARE_GLOBAL_DATA_PTR;
@@ -348,13 +349,10 @@ int vbe_setup_video_priv(struct vesa_mode_info *vesa,
 	}
 
 	/* Use double buffering if enabled */
-	if (IS_ENABLED(CONFIG_VIDEO_COPY)) {
-		if (!plat->base)
-			return log_msg_ret("copy", -ENFILE);
+	if (IS_ENABLED(CONFIG_VIDEO_COPY) && plat->base)
 		plat->copy_base = vesa->phys_base_ptr;
-	} else {
+	else
 		plat->base = vesa->phys_base_ptr;
-	}
 	log_debug("base = %lx, copy_base = %lx\n", plat->base, plat->copy_base);
 	plat->size = vesa->bytes_per_scanline * vesa->y_resolution;
 

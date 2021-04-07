@@ -7,6 +7,7 @@
 
 #include <common.h>
 #include <command.h>
+#include <asm/global_data.h>
 #include <display_options.h>
 #include <test/lib.h>
 #include <test/test.h>
@@ -43,9 +44,10 @@ static int lib_test_hush_echo(struct unit_test_state *uts)
 	int i;
 
 	for (i = 0; i < ARRAY_SIZE(echo_data); ++i) {
+		ut_silence_console(uts);
 		console_record_reset_enable();
 		ut_assertok(run_command(echo_data[i].cmd, 0));
-		gd->flags &= ~GD_FLG_RECORD;
+		ut_unsilence_console(uts);
 		console_record_readline(uts->actual_str,
 					sizeof(uts->actual_str));
 		ut_asserteq_str(echo_data[i].expected, uts->actual_str);

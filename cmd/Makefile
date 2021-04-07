@@ -13,6 +13,7 @@ obj-y += version.o
 
 # command
 obj-$(CONFIG_CMD_ACPI) += acpi.o
+obj-$(CONFIG_CMD_ADDRMAP) += addrmap.o
 obj-$(CONFIG_CMD_AES) += aes.o
 obj-$(CONFIG_CMD_AB_SELECT) += ab_select.o
 obj-$(CONFIG_CMD_ADC) += adc.o
@@ -192,6 +193,9 @@ obj-$(CONFIG_CMD_BLOB) += blob.o
 
 # Android Verified Boot 2.0
 obj-$(CONFIG_CMD_AVB) += avb.o
+
+# Foundries.IO SCP03
+obj-$(CONFIG_CMD_SCP03) += scp03.o
 
 obj-$(CONFIG_ARM) += arm/
 obj-$(CONFIG_RISCV) += riscv/

@@ -12,6 +12,7 @@
 #include <init.h>
 #include <log.h>
 #include <spl.h>
+#include <asm/global_data.h>
 #include "common.h"
 #include <dm.h>
 #include <remoteproc.h>
@@ -319,7 +320,7 @@ int fdt_disable_node(void *blob, char *node_path)
 #endif
 
 #ifndef CONFIG_SYSRESET
-void reset_cpu(ulong ignored)
+void reset_cpu(void)
 {
 }
 #endif

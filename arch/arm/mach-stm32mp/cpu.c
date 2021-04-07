@@ -18,6 +18,7 @@
 #include <asm/arch/bsec.h>
 #include <asm/arch/stm32.h>
 #include <asm/arch/sys_proto.h>
+#include <asm/global_data.h>
 #include <dm/device.h>
 #include <dm/uclass.h>
 #include <linux/bitops.h>
@@ -211,6 +212,35 @@ u32 get_bootmode(void)
 }
 
 /*
+ * weak function overidde: set the DDR/SYSRAM executable before to enable the
+ * MMU and configure DACR, for early early_enable_caches (SPL or pre-reloc)
+ */
+void dram_bank_mmu_setup(int bank)
+{
+	struct bd_info *bd = gd->bd;
+	int	i;
+	phys_addr_t start;
+	phys_size_t size;
+
+	if (IS_ENABLED(CONFIG_SPL_BUILD)) {
+		start = ALIGN_DOWN(STM32_SYSRAM_BASE, MMU_SECTION_SIZE);
+		size = ALIGN(STM32_SYSRAM_SIZE, MMU_SECTION_SIZE);
+	} else if (gd->flags & GD_FLG_RELOC) {
+		/* bd->bi_dram is available only after relocation */
+		start = bd->bi_dram[bank].start;
+		size =  bd->bi_dram[bank].size;
+	} else {
+		/* mark cacheable and executable the beggining of the DDR */
+		start = STM32_DDR_BASE;
+		size = CONFIG_DDR_CACHEABLE_SIZE;
+	}
+
+	for (i = start >> MMU_SECTION_SHIFT;
+	     i < (start >> MMU_SECTION_SHIFT) + (size >> MMU_SECTION_SHIFT);
+	     i++)
+		set_section_dcache(i, DCACHE_DEFAULT_OPTION);
+}
+/*
  * initialize the MMU and activate cache in SPL or in U-Boot pre-reloc stage
  * MMU/TLB is updated in enable_caches() for U-Boot after relocation
  * or is deactivated in U-Boot entry function start.S::cpu_init_cp15
@@ -222,20 +252,13 @@ static void early_enable_caches(void)
 	if (CONFIG_IS_ENABLED(SYS_DCACHE_OFF))
 		return;
 
-	gd->arch.tlb_size = PGTABLE_SIZE;
-	gd->arch.tlb_addr = (unsigned long)&early_tlb;
+	if (!(CONFIG_IS_ENABLED(SYS_ICACHE_OFF) && CONFIG_IS_ENABLED(SYS_DCACHE_OFF))) {
+		gd->arch.tlb_size = PGTABLE_SIZE;
+		gd->arch.tlb_addr = (unsigned long)&early_tlb;
+	}
 
+	/* enable MMU (default configuration) */
 	dcache_enable();
-
-	if (IS_ENABLED(CONFIG_SPL_BUILD))
-		mmu_set_region_dcache_behaviour(
-			ALIGN_DOWN(STM32_SYSRAM_BASE, MMU_SECTION_SIZE),
-			ALIGN(STM32_SYSRAM_SIZE, MMU_SECTION_SIZE),
-			DCACHE_DEFAULT_OPTION);
-	else
-		mmu_set_region_dcache_behaviour(STM32_DDR_BASE,
-						CONFIG_DDR_CACHEABLE_SIZE,
-						DCACHE_DEFAULT_OPTION);
 }
 
 /*
@@ -264,7 +287,8 @@ int arch_cpu_init(void)
 
 	boot_mode = get_bootmode();
 
-	if ((boot_mode & TAMP_BOOT_DEVICE_MASK) == BOOT_SERIAL_UART)
+	if (IS_ENABLED(CONFIG_CMD_STM32PROG_SERIAL) &&
+	    (boot_mode & TAMP_BOOT_DEVICE_MASK) == BOOT_SERIAL_UART)
 		gd->flags |= GD_FLG_SILENT | GD_FLG_DISABLE_CONSOLE;
 #if defined(CONFIG_DEBUG_UART) && \
 	!defined(CONFIG_TFABOOT) && \
@@ -464,7 +488,6 @@ static void setup_boot_mode(void)
 	unsigned int instance = (boot_mode & TAMP_BOOT_INSTANCE_MASK) - 1;
 	u32 forced_mode = (boot_ctx & TAMP_BOOT_FORCED_MASK);
 	struct udevice *dev;
-	int alias;
 
 	log_debug("%s: boot_ctx=0x%x => boot_mode=%x, instance=%d forced=%x\n",
 		  __func__, boot_ctx, boot_mode, instance, forced_mode);
@@ -472,19 +495,23 @@ static void setup_boot_mode(void)
 	case BOOT_SERIAL_UART:
 		if (instance > ARRAY_SIZE(serial_addr))
 			break;
-		/* serial : search associated alias in devicetree */
+		/* serial : search associated node in devicetree */
 		sprintf(cmd, "serial@%x", serial_addr[instance]);
-		if (uclass_get_device_by_name(UCLASS_SERIAL, cmd, &dev))
+		if (uclass_get_device_by_name(UCLASS_SERIAL, cmd, &dev)) {
+			/* restore console on error */
+			if (IS_ENABLED(CONFIG_CMD_STM32PROG_SERIAL))
+				gd->flags &= ~(GD_FLG_SILENT |
+					       GD_FLG_DISABLE_CONSOLE);
+			printf("uart%d = %s not found in device tree!\n",
+			       instance, cmd);
 			break;
-		if (fdtdec_get_alias_seq(gd->fdt_blob, "serial",
-					 dev_of_offset(dev), &alias))
-			break;
-		sprintf(cmd, "%d", alias);
+		}
+		sprintf(cmd, "%d", dev_seq(dev));
 		env_set("boot_device", "serial");
 		env_set("boot_instance", cmd);
 
 		/* restore console on uart when not used */
-		if (gd->cur_serial_dev != dev) {
+		if (IS_ENABLED(CONFIG_CMD_STM32PROG_SERIAL) && gd->cur_serial_dev != dev) {
 			gd->flags &= ~(GD_FLG_SILENT |
 				       GD_FLG_DISABLE_CONSOLE);
 			printf("serial boot with console enabled!\n");

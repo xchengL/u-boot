@@ -15,6 +15,7 @@
 #include <hang.h>
 #include <init.h>
 #include <net.h>
+#include <asm/global_data.h>
 #include <linux/delay.h>
 #include <linux/errno.h>
 #include <asm/io.h>
@@ -31,9 +32,9 @@ DECLARE_GLOBAL_DATA_PTR;
 /* Lowlevel init isn't used on i.MX28, so just have a dummy here */
 __weak void lowlevel_init(void) {}
 
-void reset_cpu(ulong ignored) __attribute__((noreturn));
+void reset_cpu(void) __attribute__((noreturn));
 
-void reset_cpu(ulong ignored)
+void reset_cpu(void)
 {
 	struct mxs_rtc_regs *rtc_regs =
 		(struct mxs_rtc_regs *)MXS_RTC_BASE;
