@@ -65,7 +65,7 @@ config SYS_PROMPT_HUSH_PS2
 	  to complete a command. Usually "> ".
 
 config SYS_XTRACE
-	string "Command execution tracer"
+	bool "Command execution tracer"
 	depends on CMDLINE
 	default y if CMDLINE
 	help
@@ -331,6 +331,18 @@ config CMD_FDT
 	depends on OF_LIBFDT
 	help
 	  Do FDT related setup before booting into the Operating System.
+
+config SUPPORT_EXTENSION_SCAN
+	bool
+
+config CMD_EXTENSION
+	bool "Extension board management command"
+	select CMD_FDT
+	depends on SUPPORT_EXTENSION_SCAN
+	help
+	  Enables the "extension" command, which allows to detect
+	  extension boards connected to the system, and apply
+	  corresponding Device Tree overlays.
 
 config CMD_GO
 	bool "go"
@@ -1067,6 +1079,7 @@ config CMD_MISC
 
 config CMD_MMC
 	bool "mmc"
+	depends on MMC
 	help
 	  MMC memory mapped support.
 
@@ -1960,6 +1973,8 @@ config CMD_AES
 
 config CMD_BLOB
 	bool "Enable the 'blob' command"
+	depends on !MX6ULL && !MX6SLL && !MX6SL
+	select IMX_HAB if ARCH_MX6 || ARCH_MX7 || ARCH_MX7ULP || ARCH_IMX8M
 	help
 	  This is used with the Freescale secure boot mechanism.
 
@@ -2322,6 +2337,15 @@ config CMD_AVB
 	    avb read_part_hex - read data from partition and output to stdout
 	    avb write_part - write data to partition
 	    avb verify - run full verification chain
+
+config CMD_STACKPROTECTOR_TEST
+	bool "Test command for stack protector"
+	depends on STACKPROTECTOR
+	help
+	  Enable stackprot_test command
+	  The stackprot_test command will force a stack overrun to test
+	  the stack smashing detection mechanisms.
+
 endmenu
 
 config CMD_UBI

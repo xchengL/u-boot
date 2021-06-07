@@ -78,6 +78,15 @@ config DM_ETH_PHY
 	help
 	  Enable driver model for Ethernet Generic PHY .
 
+config DSA_SANDBOX
+	depends on DM_DSA && SANDBOX
+	default y
+	bool "Sandbox: Mocked DSA driver"
+	help
+	  This driver implements a dummy DSA switch connected to a dummy sandbox
+	  Ethernet device used as DSA master, to test DSA class code, including
+	  exported DSA API and datapath processing of Ethernet traffic.
+
 menuconfig NETDEVICES
 	bool "Network device support"
 	depends on NET
@@ -170,6 +179,13 @@ config CORTINA_NI_ENET
 	help
 	  This driver supports the Cortina-Access Ethernet MAC for
 	  all supported CAxxxx SoCs.
+
+config CALXEDA_XGMAC
+	bool "Calxeda XGMAC support"
+	depends on DM_ETH
+	help
+	  This driver supports the XGMAC in Calxeda Highbank and Midway
+	  machines.
 
 config DWC_ETH_QOS
 	bool "Synopsys DWC Ethernet QOS device support"
@@ -721,13 +737,11 @@ config SYS_DPAA_QBMAN
 		     ARCH_T1040 || \
 		     ARCH_T1042 || \
 		     ARCH_T2080 || \
-		     ARCH_T2081 || \
 		     ARCH_T4240 || \
 		     ARCH_T4160 || \
 		     ARCH_P4080 || \
 		     ARCH_P3041 || \
 		     ARCH_P5040 || \
-		     ARCH_P5020 || \
 		     ARCH_LS1043A || \
 		     ARCH_LS1046A
 	help

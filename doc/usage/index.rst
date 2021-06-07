@@ -26,15 +26,20 @@ Shell commands
    conitrace
    echo
    exception
+   extension
    exit
    false
+   fatinfo
    for
    load
    loady
    mbr
+   mmc
    md
    pstore
    qfw
    sbi
+   size
    true
    scp03
+   reset

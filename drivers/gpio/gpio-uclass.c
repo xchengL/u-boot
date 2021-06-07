@@ -713,17 +713,6 @@ int dm_gpio_set_dir_flags(struct gpio_desc *desc, ulong flags)
 	return dm_gpio_clrset_flags(desc, GPIOD_MASK_DIR, flags);
 }
 
-int dm_gpio_set_dir(struct gpio_desc *desc)
-{
-	int ret;
-
-	ret = check_reserved(desc, "set_dir");
-	if (ret)
-		return ret;
-
-	return _dm_gpio_set_flags(desc, desc->flags);
-}
-
 int dm_gpios_clrset_flags(struct gpio_desc *desc, int count, ulong clr,
 			  ulong set)
 {
@@ -1226,9 +1215,9 @@ int gpio_get_list_count(struct udevice *dev, const char *list_name)
 {
 	int ret;
 
-	ret = dev_read_phandle_with_args(dev, list_name, "#gpio-cells", 0, -1,
-					 NULL);
-	if (ret) {
+	ret = dev_count_phandle_with_args(dev, list_name, "#gpio-cells",
+					  -ENOENT);
+	if (ret < 0) {
 		debug("%s: Node '%s', property '%s', GPIO count failed: %d\n",
 		      __func__, dev->name, list_name, ret);
 	}

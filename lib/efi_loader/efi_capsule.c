@@ -208,16 +208,6 @@ skip:
 const efi_guid_t efi_guid_capsule_root_cert_guid =
 	EFI_FIRMWARE_MANAGEMENT_CAPSULE_ID_GUID;
 
-__weak int efi_get_public_key_data(void **pkey, efi_uintn_t *pkey_len)
-{
-	/* The platform is supposed to provide
-	 * a method for getting the public key
-	 * stored in the form of efi signature
-	 * list
-	 */
-	return 0;
-}
-
 efi_status_t efi_capsule_authenticate(const void *capsule, efi_uintn_t capsule_size,
 				      void **image, efi_uintn_t *image_size)
 {
@@ -481,7 +471,6 @@ efi_status_t EFIAPI efi_update_capsule(
 		if (ret != EFI_SUCCESS)
 			goto out;
 	}
-out:
 
 	if (IS_ENABLED(CONFIG_EFI_ESRT)) {
 		/* Rebuild the ESRT to reflect any updated FW images. */
@@ -489,6 +478,7 @@ out:
 		if (ret != EFI_SUCCESS)
 			log_warning("EFI Capsule: failed to update ESRT\n");
 	}
+out:
 
 	return EFI_EXIT(ret);
 }
@@ -685,7 +675,6 @@ skip:
 		efi_free_pool(boot_dev);
 		boot_dev = NULL;
 	}
-out:
 	if (boot_dev) {
 		u16 *path_str;
 
@@ -703,6 +692,7 @@ out:
 	} else {
 		ret = EFI_NOT_FOUND;
 	}
+out:
 	free(boot_order);
 
 	return ret;
@@ -756,8 +746,11 @@ static efi_status_t efi_capsule_scan_dir(u16 ***files, unsigned int *num)
 		tmp_size = dirent_size;
 		ret = EFI_CALL((*dirh->read)(dirh, &tmp_size, dirent));
 		if (ret == EFI_BUFFER_TOO_SMALL) {
+			struct efi_file_info *old_dirent = dirent;
+
 			dirent = realloc(dirent, tmp_size);
 			if (!dirent) {
+				dirent = old_dirent;
 				ret = EFI_OUT_OF_RESOURCES;
 				goto err;
 			}

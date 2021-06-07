@@ -76,6 +76,7 @@ FSP_M_DATA            = b'fsp_m'
 FSP_S_DATA            = b'fsp_s'
 FSP_T_DATA            = b'fsp_t'
 ATF_BL31_DATA         = b'bl31'
+OPENSBI_DATA          = b'opensbi'
 SCP_DATA              = b'scp'
 TEST_FDT1_DATA        = b'fdt1'
 TEST_FDT2_DATA        = b'test-fdt2'
@@ -178,6 +179,7 @@ class TestFunctional(unittest.TestCase):
         TestFunctional._MakeInputFile('compress', COMPRESS_DATA)
         TestFunctional._MakeInputFile('compress_big', COMPRESS_DATA_BIG)
         TestFunctional._MakeInputFile('bl31.bin', ATF_BL31_DATA)
+        TestFunctional._MakeInputFile('fw_dynamic.bin', OPENSBI_DATA)
         TestFunctional._MakeInputFile('scp.bin', SCP_DATA)
 
         # Add a few .dtb files for testing
@@ -1341,6 +1343,7 @@ class TestFunctional(unittest.TestCase):
 
     def testSplNoDtb(self):
         """Test that an image with spl/u-boot-spl-nodtb.bin can be created"""
+        self._SetupSplElf()
         data = self._DoReadFile('052_u_boot_spl_nodtb.dts')
         self.assertEqual(U_BOOT_SPL_NODTB_DATA, data[:len(U_BOOT_SPL_NODTB_DATA)])
 
@@ -1594,26 +1597,41 @@ class TestFunctional(unittest.TestCase):
         self.assertEqual(1, fhdr.ver_major)
         self.assertEqual(0, fhdr.ver_minor)
         self.assertEqual(0, fhdr.base)
-        self.assertEqual(16 + 16 +
-                         fmap_util.FMAP_HEADER_LEN +
-                         fmap_util.FMAP_AREA_LEN * 3, fhdr.image_size)
+        expect_size = fmap_util.FMAP_HEADER_LEN + fmap_util.FMAP_AREA_LEN * 5
+        self.assertEqual(16 + 16 + expect_size, fhdr.image_size)
         self.assertEqual(b'FMAP', fhdr.name)
-        self.assertEqual(3, fhdr.nareas)
-        for fentry in fentries:
-            self.assertEqual(0, fentry.flags)
+        self.assertEqual(5, fhdr.nareas)
+        fiter = iter(fentries)
 
-        self.assertEqual(0, fentries[0].offset)
-        self.assertEqual(4, fentries[0].size)
-        self.assertEqual(b'RO_U_BOOT', fentries[0].name)
+        fentry = next(fiter)
+        self.assertEqual(b'SECTION0', fentry.name)
+        self.assertEqual(0, fentry.offset)
+        self.assertEqual(16, fentry.size)
+        self.assertEqual(0, fentry.flags)
 
-        self.assertEqual(16, fentries[1].offset)
-        self.assertEqual(4, fentries[1].size)
-        self.assertEqual(b'RW_U_BOOT', fentries[1].name)
+        fentry = next(fiter)
+        self.assertEqual(b'RO_U_BOOT', fentry.name)
+        self.assertEqual(0, fentry.offset)
+        self.assertEqual(4, fentry.size)
+        self.assertEqual(0, fentry.flags)
 
-        self.assertEqual(32, fentries[2].offset)
-        self.assertEqual(fmap_util.FMAP_HEADER_LEN +
-                         fmap_util.FMAP_AREA_LEN * 3, fentries[2].size)
-        self.assertEqual(b'FMAP', fentries[2].name)
+        fentry = next(fiter)
+        self.assertEqual(b'SECTION1', fentry.name)
+        self.assertEqual(16, fentry.offset)
+        self.assertEqual(16, fentry.size)
+        self.assertEqual(0, fentry.flags)
+
+        fentry = next(fiter)
+        self.assertEqual(b'RW_U_BOOT', fentry.name)
+        self.assertEqual(16, fentry.offset)
+        self.assertEqual(4, fentry.size)
+        self.assertEqual(0, fentry.flags)
+
+        fentry = next(fiter)
+        self.assertEqual(b'FMAP', fentry.name)
+        self.assertEqual(32, fentry.offset)
+        self.assertEqual(expect_size, fentry.size)
+        self.assertEqual(0, fentry.flags)
 
     def testBlobNamedByArg(self):
         """Test we can add a blob with the filename coming from an entry arg"""
@@ -2063,20 +2081,29 @@ class TestFunctional(unittest.TestCase):
         self.assertEqual(expected, data[:32])
         fhdr, fentries = fmap_util.DecodeFmap(data[36:])
 
-        self.assertEqual(0x100, fhdr.image_size)
+        self.assertEqual(0x180, fhdr.image_size)
+        expect_size = fmap_util.FMAP_HEADER_LEN + fmap_util.FMAP_AREA_LEN * 4
+        fiter = iter(fentries)
 
-        self.assertEqual(0, fentries[0].offset)
-        self.assertEqual(4, fentries[0].size)
-        self.assertEqual(b'U_BOOT', fentries[0].name)
+        fentry = next(fiter)
+        self.assertEqual(b'U_BOOT', fentry.name)
+        self.assertEqual(0, fentry.offset)
+        self.assertEqual(4, fentry.size)
 
-        self.assertEqual(4, fentries[1].offset)
-        self.assertEqual(3, fentries[1].size)
-        self.assertEqual(b'INTEL_MRC', fentries[1].name)
+        fentry = next(fiter)
+        self.assertEqual(b'SECTION', fentry.name)
+        self.assertEqual(4, fentry.offset)
+        self.assertEqual(0x20 + expect_size, fentry.size)
 
-        self.assertEqual(36, fentries[2].offset)
-        self.assertEqual(fmap_util.FMAP_HEADER_LEN +
-                         fmap_util.FMAP_AREA_LEN * 3, fentries[2].size)
-        self.assertEqual(b'FMAP', fentries[2].name)
+        fentry = next(fiter)
+        self.assertEqual(b'INTEL_MRC', fentry.name)
+        self.assertEqual(4, fentry.offset)
+        self.assertEqual(3, fentry.size)
+
+        fentry = next(fiter)
+        self.assertEqual(b'FMAP', fentry.name)
+        self.assertEqual(36, fentry.offset)
+        self.assertEqual(expect_size, fentry.size)
 
     def testElf(self):
         """Basic test of ELF entries"""
@@ -3801,7 +3828,7 @@ class TestFunctional(unittest.TestCase):
             'default-dt': 'test-fdt2',
         }
         data = self._DoReadFileDtb(
-            '172_fit_fdt.dts',
+            '170_fit_fdt.dts',
             entry_args=entry_args,
             extra_indirs=[os.path.join(self._indir, TEST_FDT_SUBDIR)])[0]
         self.assertEqual(U_BOOT_NODTB_DATA, data[-len(U_BOOT_NODTB_DATA):])
@@ -3823,7 +3850,7 @@ class TestFunctional(unittest.TestCase):
     def testFitFdtMissingList(self):
         """Test handling of a missing 'of-list' entry arg"""
         with self.assertRaises(ValueError) as e:
-            self._DoReadFile('172_fit_fdt.dts')
+            self._DoReadFile('170_fit_fdt.dts')
         self.assertIn("Generator node requires 'of-list' entry argument",
                       str(e.exception))
 
@@ -3846,7 +3873,7 @@ class TestFunctional(unittest.TestCase):
         entry_args = {
             'of-list': '',
         }
-        data = self._DoReadFileDtb('172_fit_fdt.dts', entry_args=entry_args)[0]
+        data = self._DoReadFileDtb('170_fit_fdt.dts', entry_args=entry_args)[0]
 
     def testFitFdtMissing(self):
         """Test handling of a missing 'default-dt' entry arg"""
@@ -3855,7 +3882,7 @@ class TestFunctional(unittest.TestCase):
         }
         with self.assertRaises(ValueError) as e:
             self._DoReadFileDtb(
-                '172_fit_fdt.dts',
+                '170_fit_fdt.dts',
                 entry_args=entry_args,
                 extra_indirs=[os.path.join(self._indir, TEST_FDT_SUBDIR)])[0]
         self.assertIn("Generated 'default' node requires default-dt entry argument",
@@ -3869,7 +3896,7 @@ class TestFunctional(unittest.TestCase):
         }
         with self.assertRaises(ValueError) as e:
             self._DoReadFileDtb(
-                '172_fit_fdt.dts',
+                '170_fit_fdt.dts',
                 entry_args=entry_args,
                 extra_indirs=[os.path.join(self._indir, TEST_FDT_SUBDIR)])[0]
         self.assertIn("default-dt entry argument 'test-fdt3' not found in fdt list: test-fdt1, test-fdt2",
@@ -4272,6 +4299,7 @@ class TestFunctional(unittest.TestCase):
 
     def testTplNoDtb(self):
         """Test that an image with tpl/u-boot-tpl-nodtb.bin can be created"""
+        self._SetupTplElf()
         data = self._DoReadFile('192_u_boot_tpl_nodtb.dts')
         self.assertEqual(U_BOOT_TPL_NODTB_DATA,
                          data[:len(U_BOOT_TPL_NODTB_DATA)])
@@ -4508,6 +4536,11 @@ class TestFunctional(unittest.TestCase):
         # Now the final piece, which should be default-aligned
         expected += tools.GetBytes(0, 88 - len(expected)) + U_BOOT_NODTB_DATA
         self.assertEqual(expected, data)
+
+    def testPackOpenSBI(self):
+        """Test that an image with an OpenSBI binary can be created"""
+        data = self._DoReadFile('201_opensbi.dts')
+        self.assertEqual(OPENSBI_DATA, data[:len(OPENSBI_DATA)])
 
 if __name__ == "__main__":
     unittest.main()

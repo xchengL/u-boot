@@ -461,8 +461,12 @@ see www.flashrom.org/Flashrom for more information.
 
 When used, this entry will be populated with an FMAP which reflects the
 entries in the current image. Note that any hierarchy is squashed, since
-FMAP does not support this. Also, CBFS entries appear as a single entry -
-the sub-entries are ignored.
+FMAP does not support this. Sections are represented as an area appearing
+before its contents, so that it is possible to reconstruct the hierarchy
+from the FMAP by using the offset information. This convention does not
+seem to be documented, but is used in Chromium OS.
+
+CBFS entries appear as a single entry, i.e. the sub-entries are ignored.
 
 
 
@@ -757,6 +761,19 @@ binman.
 
 
 
+Entry: opensbi: RISC-V OpenSBI fw_dynamic blob
+----------------------------------------------
+
+Properties / Entry arguments:
+    - opensbi-path: Filename of file to read into entry. This is typically
+        called fw_dynamic.bin
+
+This entry holds the run-time firmware, typically started by U-Boot SPL.
+See the U-Boot README for your architecture or board for how to use it. See
+https://github.com/riscv/opensbi for more information about OpenSBI.
+
+
+
 Entry: powerpc-mpc85xx-bootpg-resetvec: PowerPC mpc85xx bootpg + resetvec code for U-Boot
 -----------------------------------------------------------------------------------------
 
@@ -801,6 +818,11 @@ Properties / Entry arguments: (see binman README for more information):
 
 Properties:
     allow_missing: True if this section permits external blobs to be
+        missing their contents. The second will produce an image but of
+        course it will not work.
+
+Properties:
+    _allow_missing: True if this section permits external blobs to be
         missing their contents. The second will produce an image but of
         course it will not work.
 

@@ -164,9 +164,6 @@ int dm_init(bool of_live)
 {
 	int ret;
 
-	if (IS_ENABLED(CONFIG_OF_TRANSLATE_ZERO_SIZE_CELLS))
-		gd->dm_flags |= GD_DM_FLG_SIZE_CELLS_0;
-
 	if (gd->dm_root) {
 		dm_warn("Virtual root driver already exists!\n");
 		return -EINVAL;
@@ -265,7 +262,7 @@ int dm_scan_plat(bool pre_reloc_only)
 static int dm_scan_fdt_node(struct udevice *parent, ofnode parent_node,
 			    bool pre_reloc_only)
 {
-	int ret = 0, err;
+	int ret = 0, err = 0;
 	ofnode node;
 
 	if (!ofnode_valid(parent_node))

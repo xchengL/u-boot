@@ -12,6 +12,7 @@
 #include <efi_load_initrd.h>
 #include <efi_loader.h>
 #include <efi_rng.h>
+#include <efi_variable.h>
 #include <exports.h>
 #include <hexdump.h>
 #include <log.h>
@@ -227,8 +228,7 @@ static int do_efi_capsule_res(struct cmd_tbl *cmdtp, int flag,
 {
 	int capsule_id;
 	char *endp;
-	char var_name[12];
-	u16 var_name16[12], *p;
+	u16 var_name16[12];
 	efi_guid_t guid;
 	struct efi_capsule_result_variable_header *result = NULL;
 	efi_uintn_t size;
@@ -240,8 +240,9 @@ static int do_efi_capsule_res(struct cmd_tbl *cmdtp, int flag,
 	guid = efi_guid_capsule_report;
 	if (argc == 1) {
 		size = sizeof(var_name16);
-		ret = EFI_CALL(RT->get_variable(L"CapsuleLast", &guid, NULL,
-						&size, var_name16));
+		ret = efi_get_variable_int(L"CapsuleLast", &guid, NULL,
+					   &size, var_name16, NULL);
+
 		if (ret != EFI_SUCCESS) {
 			if (ret == EFI_NOT_FOUND)
 				printf("CapsuleLast doesn't exist\n");
@@ -259,19 +260,18 @@ static int do_efi_capsule_res(struct cmd_tbl *cmdtp, int flag,
 		if (capsule_id < 0 || capsule_id > 0xffff)
 			return CMD_RET_USAGE;
 
-		sprintf(var_name, "Capsule%04X", capsule_id);
-		p = var_name16;
-		utf8_utf16_strncpy(&p, var_name, 9);
+		efi_create_indexed_name(var_name16, sizeof(var_name16),
+					"Capsule", capsule_id);
 	}
 
 	size = 0;
-	ret = EFI_CALL(RT->get_variable(var_name16, &guid, NULL, &size, NULL));
+	ret = efi_get_variable_int(var_name16, &guid, NULL, &size, NULL, NULL);
 	if (ret == EFI_BUFFER_TOO_SMALL) {
 		result = malloc(size);
 		if (!result)
 			return CMD_RET_FAILURE;
-		ret = EFI_CALL(RT->get_variable(var_name16, &guid, NULL, &size,
-						result));
+		ret = efi_get_variable_int(var_name16, &guid, NULL, &size,
+					   result, NULL);
 	}
 	if (ret != EFI_SUCCESS) {
 		free(result);
@@ -341,27 +341,27 @@ static int do_efi_capsule(struct cmd_tbl *cmdtp, int flag,
 #endif /* CONFIG_EFI_HAVE_CAPSULE_SUPPORT */
 
 /**
- * efi_get_device_handle_info() - get information of UEFI device
+ * efi_get_device_path_text() - get device path text
  *
- * @handle:		Handle of UEFI device
- * @dev_path_text:	Pointer to text of device path
- * Return:		0 on success, -1 on failure
+ * Return the text representation of the device path of a handle.
  *
- * Currently return a formatted text of device path.
+ * @handle:	handle of UEFI device
+ * Return:
+ * Pointer to the device path text or NULL.
+ * The caller is responsible for calling FreePool().
  */
-static int efi_get_device_handle_info(efi_handle_t handle, u16 **dev_path_text)
+static u16 *efi_get_device_path_text(efi_handle_t handle)
 {
-	struct efi_device_path *dp;
+	struct efi_handler *handler;
 	efi_status_t ret;
 
-	ret = EFI_CALL(BS->open_protocol(handle, &efi_guid_device_path,
-					 (void **)&dp, NULL /* FIXME */, NULL,
-					 EFI_OPEN_PROTOCOL_GET_PROTOCOL));
-	if (ret == EFI_SUCCESS) {
-		*dev_path_text = efi_dp_str(dp);
-		return 0;
+	ret = efi_search_protocol(handle, &efi_guid_device_path, &handler);
+	if (ret == EFI_SUCCESS && handler->protocol_interface) {
+		struct efi_device_path *dp = handler->protocol_interface;
+
+		return efi_dp_str(dp);
 	} else {
-		return -1;
+		return NULL;
 	}
 }
 
@@ -401,7 +401,8 @@ static int do_efi_show_devices(struct cmd_tbl *cmdtp, int flag,
 	printf("Device%.*s Device Path\n", EFI_HANDLE_WIDTH - 6, spc);
 	printf("%.*s ====================\n", EFI_HANDLE_WIDTH, sep);
 	for (i = 0; i < num; i++) {
-		if (!efi_get_device_handle_info(handles[i], &dev_path_text)) {
+		dev_path_text = efi_get_device_path_text(handles[i]);
+		if (dev_path_text) {
 			printf("%p %ls\n", handles[i], dev_path_text);
 			efi_free_pool(dev_path_text);
 		}
@@ -953,8 +954,7 @@ static int do_efi_boot_add(struct cmd_tbl *cmdtp, int flag,
 {
 	int id;
 	char *endp;
-	char var_name[9];
-	u16 var_name16[9], *p;
+	u16 var_name16[9];
 	efi_guid_t guid;
 	size_t label_len, label_len16;
 	u16 *label;
@@ -987,9 +987,8 @@ static int do_efi_boot_add(struct cmd_tbl *cmdtp, int flag,
 			if (*endp != '\0' || id > 0xffff)
 				return CMD_RET_USAGE;
 
-			sprintf(var_name, "Boot%04X", id);
-			p = var_name16;
-			utf8_utf16_strncpy(&p, var_name, 9);
+			efi_create_indexed_name(var_name16, sizeof(var_name16),
+						"Boot", id);
 
 			/* label */
 			label_len = strlen(argv[2]);
@@ -1065,11 +1064,11 @@ static int do_efi_boot_add(struct cmd_tbl *cmdtp, int flag,
 		goto out;
 	}
 
-	ret = EFI_CALL(efi_set_variable(var_name16, &guid,
-					EFI_VARIABLE_NON_VOLATILE |
-					EFI_VARIABLE_BOOTSERVICE_ACCESS |
-					EFI_VARIABLE_RUNTIME_ACCESS,
-					size, data));
+	ret = efi_set_variable_int(var_name16, &guid,
+				   EFI_VARIABLE_NON_VOLATILE |
+				   EFI_VARIABLE_BOOTSERVICE_ACCESS |
+				   EFI_VARIABLE_RUNTIME_ACCESS,
+				   size, data, false);
 	if (ret != EFI_SUCCESS) {
 		printf("Cannot set %ls\n", var_name16);
 		r = CMD_RET_FAILURE;
@@ -1106,8 +1105,7 @@ static int do_efi_boot_rm(struct cmd_tbl *cmdtp, int flag,
 	efi_guid_t guid;
 	int id, i;
 	char *endp;
-	char var_name[9];
-	u16 var_name16[9], *p;
+	u16 var_name16[9];
 	efi_status_t ret;
 
 	if (argc == 1)
@@ -1119,11 +1117,10 @@ static int do_efi_boot_rm(struct cmd_tbl *cmdtp, int flag,
 		if (*endp != '\0' || id > 0xffff)
 			return CMD_RET_FAILURE;
 
-		sprintf(var_name, "Boot%04X", id);
-		p = var_name16;
-		utf8_utf16_strncpy(&p, var_name, 9);
-
-		ret = EFI_CALL(efi_set_variable(var_name16, &guid, 0, 0, NULL));
+		efi_create_indexed_name(var_name16, sizeof(var_name16),
+					"Boot", id);
+		ret = efi_set_variable_int(var_name16, &guid, 0, 0, NULL,
+					   false);
 		if (ret) {
 			printf("Cannot remove %ls\n", var_name16);
 			return CMD_RET_FAILURE;
@@ -1146,8 +1143,6 @@ static void show_efi_boot_opt_data(u16 *varname16, void *data, size_t *size)
 {
 	struct efi_device_path *initrd_path = NULL;
 	struct efi_load_option lo;
-	char *label, *p;
-	size_t label_len16, label_len;
 	u16 *dp_str;
 	efi_status_t ret;
 	efi_uintn_t initrd_dp_size;
@@ -1159,14 +1154,6 @@ static void show_efi_boot_opt_data(u16 *varname16, void *data, size_t *size)
 		return;
 	}
 
-	label_len16 = u16_strlen(lo.label);
-	label_len = utf16_utf8_strnlen(lo.label, label_len16);
-	label = malloc(label_len + 1);
-	if (!label)
-		return;
-	p = label;
-	utf16_utf8_strncpy(&p, lo.label, label_len16);
-
 	printf("%ls:\nattributes: %c%c%c (0x%08x)\n",
 	       varname16,
 	       /* ACTIVE */
@@ -1176,7 +1163,7 @@ static void show_efi_boot_opt_data(u16 *varname16, void *data, size_t *size)
 	       /* HIDDEN */
 	       lo.attributes & LOAD_OPTION_HIDDEN ? 'H' : '-',
 	       lo.attributes);
-	printf("  label: %s\n", label);
+	printf("  label: %ls\n", lo.label);
 
 	dp_str = efi_dp_str(lo.file_path);
 	printf("  file_path: %ls\n", dp_str);
@@ -1193,7 +1180,6 @@ static void show_efi_boot_opt_data(u16 *varname16, void *data, size_t *size)
 	printf("  data:\n");
 	print_hex_dump("    ", DUMP_PREFIX_OFFSET, 16, 1,
 		       lo.optional_data, *size, true);
-	free(label);
 }
 
 /**
@@ -1323,12 +1309,9 @@ static int show_efi_boot_order(void)
 	u16 *bootorder;
 	efi_uintn_t size;
 	int num, i;
-	char var_name[9];
-	u16 var_name16[9], *p16;
+	u16 var_name16[9];
 	void *data;
 	struct efi_load_option lo;
-	char *label, *p;
-	size_t label_len16, label_len;
 	efi_status_t ret;
 
 	size = 0;
@@ -1356,16 +1339,15 @@ static int show_efi_boot_order(void)
 
 	num = size / sizeof(u16);
 	for (i = 0; i < num; i++) {
-		sprintf(var_name, "Boot%04X", bootorder[i]);
-		p16 = var_name16;
-		utf8_utf16_strncpy(&p16, var_name, 9);
+		efi_create_indexed_name(var_name16, sizeof(var_name16),
+					"Boot", i);
 
 		size = 0;
 		ret = EFI_CALL(efi_get_variable(var_name16,
 						&efi_global_variable_guid, NULL,
 						&size, NULL));
 		if (ret != EFI_BUFFER_TOO_SMALL) {
-			printf("%2d: %s: (not defined)\n", i + 1, var_name);
+			printf("%2d: %ls: (not defined)\n", i + 1, var_name16);
 			continue;
 		}
 
@@ -1390,18 +1372,7 @@ static int show_efi_boot_order(void)
 			goto out;
 		}
 
-		label_len16 = u16_strlen(lo.label);
-		label_len = utf16_utf8_strnlen(lo.label, label_len16);
-		label = malloc(label_len + 1);
-		if (!label) {
-			free(data);
-			ret = CMD_RET_FAILURE;
-			goto out;
-		}
-		p = label;
-		utf16_utf8_strncpy(&p, lo.label, label_len16);
-		printf("%2d: %s: %s\n", i + 1, var_name, label);
-		free(label);
+		printf("%2d: %ls: %ls\n", i + 1, var_name16, lo.label);
 
 		free(data);
 	}
@@ -1448,11 +1419,11 @@ static int do_efi_boot_next(struct cmd_tbl *cmdtp, int flag,
 
 	guid = efi_global_variable_guid;
 	size = sizeof(u16);
-	ret = EFI_CALL(efi_set_variable(L"BootNext", &guid,
+	ret = efi_set_variable_int(L"BootNext", &guid,
 					EFI_VARIABLE_NON_VOLATILE |
 					EFI_VARIABLE_BOOTSERVICE_ACCESS |
 					EFI_VARIABLE_RUNTIME_ACCESS,
-					size, &bootnext));
+					size, &bootnext, false);
 	if (ret != EFI_SUCCESS) {
 		printf("Cannot set BootNext\n");
 		r = CMD_RET_FAILURE;
@@ -1509,11 +1480,11 @@ static int do_efi_boot_order(struct cmd_tbl *cmdtp, int flag,
 	}
 
 	guid = efi_global_variable_guid;
-	ret = EFI_CALL(efi_set_variable(L"BootOrder", &guid,
+	ret = efi_set_variable_int(L"BootOrder", &guid,
 					EFI_VARIABLE_NON_VOLATILE |
 					EFI_VARIABLE_BOOTSERVICE_ACCESS |
 					EFI_VARIABLE_RUNTIME_ACCESS,
-					size, bootorder));
+					size, bootorder, true);
 	if (ret != EFI_SUCCESS) {
 		printf("Cannot set BootOrder\n");
 		r = CMD_RET_FAILURE;
