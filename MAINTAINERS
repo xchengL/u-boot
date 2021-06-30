@@ -882,6 +882,7 @@ F:	arch/mips/dts/mrvl,cn73xx.dtsi
 
 MMC
 M:	Peng Fan <peng.fan@nxp.com>
+M:	Jaehoon Chung <jh80.chung@samsung.com>
 S:	Maintained
 T:	git https://source.denx.de/u-boot/custodians/u-boot-mmc.git
 F:	drivers/mmc/
@@ -912,6 +913,14 @@ M:	Thomas Chou <thomas@wytron.com.tw>
 S:	Maintained
 T:	git https://source.denx.de/u-boot/custodians/u-boot-nios.git
 F:	arch/nios2/
+
+NVMe
+M:	Bin Meng <bmeng.cn@gmail.com>
+S:	Maintained
+F:	drivers/nvme/
+F:	cmd/nvme.c
+F:	include/nvme.h
+F:	doc/develop/driver-model/nvme.rst
 
 ONENAND
 #M:	Lukasz Majewski <l.majewski@majess.pl>
